@@ -31,6 +31,7 @@ class TestLdapConnection extends Command
     public function handle()
     {
         try {
+
             $ldap = Container::getDefaultConnection();
             $ldap->connect();
 
@@ -43,7 +44,7 @@ class TestLdapConnection extends Command
                 } else {
                     $this->error("Failed to bind to the LDAP server. Please check your credentials.");
                 }
-            } 
+            }
             else {
                 $this->error("Failed to connect to the LDAP server.");
             }
