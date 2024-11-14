@@ -4,15 +4,56 @@
 use LdapRecord\Container;
 use Illuminate\Http\Request;
 use LdapRecord\Auth\BindException;
+use LdapRecord\Models\OpenLDAP\User;
 use Illuminate\Support\Facades\Route;
-use LdapRecord\Models\ActiveDirectory\User;
 // use LdapRecord\Models\ActiveDirectory\Container;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-Route::post('/login', function (Request $request) {
+Route::post('/login', function (Request $request) { // using LdapRecord-Laravel package
+    // User credentials to authenticate
+    $username = $request->input('username');
+    $password = $request->input('password');
+
+    // Connect to the LDAP server
+    $ldap = Container::getDefaultConnection();
+    $ldap->connect();
+    
+    try {
+        // Search for the user
+        $user = User::where('uid', '=', $username)->first();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found in LDAP'
+            ]);
+        }
+   
+        // Attempt to bind with the user's credentials
+        $isAuthenticated = $ldap->auth()->attempt($user, $password);
+
+        return $isAuthenticated ? 'User authenticated successfully ' : 'Invalid credentials';
+        } catch (BindException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Authentication failed: ' . $e->getMessage()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ]);
+        }
+});
+
+Route::post('/alternative-login', function(Request $request){ // using PHP built-in LDAP methods
+    // User credentials to authenticate
+    $username = $request->input('username');
+    $password = $request->input('password');
+
     // LDAP server details
     $ldapHost = env('LDAP_HOST'); 
     $ldapPort = env('LDAP_PORT'); // Default port for LDAP is 389
@@ -21,10 +62,6 @@ Route::post('/login', function (Request $request) {
     // Service account credentials (for initial connection)
     $serviceUserDn = env('LDAP_USERNAME');
     $servicePassword = env('LDAP_PASSWORD');
-
-    // User credentials to authenticate
-    $username = $request->input('username');
-    $password = $request->input('password');
 
     // Step 1: Connect to LDAP server
     $ldapConnection = ldap_connect("ldaps://{$ldapHost}", $ldapPort);
@@ -53,7 +90,7 @@ Route::post('/login', function (Request $request) {
 
     // Step 4: Get the user’s DN and attempt to bind with their credentials
     $userDn = $entries[0]['dn'];
-    $userBind = ldap_bind($ldapConnection, $userDn, $password);
+    $userBind = @ldap_bind($ldapConnection, $userDn, $password);
 
     ldap_close($ldapConnection);
 
